@@ -23,8 +23,9 @@ then
 fi
 
 # If $venv_dir is "-", then disable venv support
+# Also disable venv in Colab (detected by COLAB_GPU environment variable)
 use_venv=1
-if [[ $venv_dir == "-" ]]; then
+if [[ $venv_dir == "-" ]] || [[ -n "${COLAB_GPU}" ]]; then
   use_venv=0
 fi
 
@@ -35,20 +36,39 @@ then
     install_dir="$SCRIPT_DIR"
 fi
 
-# Name of the subdirectory (defaults to stable-diffusion-webui)
+# Name of the subdirectory (defaults to ZeroTraceGPT-Image-Creator)
 if [[ -z "${clone_dir}" ]]
 then
-    clone_dir="stable-diffusion-webui"
+    clone_dir="ZeroTraceGPT-Image-Creator"
 fi
 
 # python3 executable
 if [[ -z "${python_cmd}" ]]
 then
-  python_cmd="python3.10"
+  # Try python3.10 first (preferred), then fall back to available python3
+  if command -v python3.10 &> /dev/null
+  then
+    python_cmd="python3.10"
+  elif command -v python3 &> /dev/null
+  then
+    python_cmd="python3"
+  elif command -v python &> /dev/null
+  then
+    python_cmd="python"
+  else
+    python_cmd="python3.10"  # Default fallback
+  fi
 fi
 if [[ ! -x "$(command -v "${python_cmd}")" ]]
 then
-  python_cmd="python3"
+  # Final fallback: try python3 or python
+  if command -v python3 &> /dev/null
+  then
+    python_cmd="python3"
+  elif command -v python &> /dev/null
+  then
+    python_cmd="python"
+  fi
 fi
 
 # git executable
@@ -92,7 +112,7 @@ export PIP_IGNORE_INSTALLED=0
 delimiter="################################################################"
 
 printf "\n%s\n" "${delimiter}"
-printf "\e[1m\e[32mInstall script for stable-diffusion + Web UI\n"
+printf "\e[1m\e[32mInstall script for ZeroTraceGPT Image Creator\n"
 printf "\e[1m\e[34mTested on Debian 11 (Bullseye), Fedora 34+ and openSUSE Leap 15.4 or newer.\e[0m"
 printf "\n%s\n" "${delimiter}"
 
@@ -199,9 +219,9 @@ then
     cd "${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
 else
     printf "\n%s\n" "${delimiter}"
-    printf "Clone stable-diffusion-webui"
+    printf "Clone ZeroTraceGPT Image Creator"
     printf "\n%s\n" "${delimiter}"
-    "${GIT}" clone https://github.com/AUTOMATIC1111/stable-diffusion-webui.git "${clone_dir}"
+    "${GIT}" clone https://github.com/samadriaz9/ZeroTraceGPT-Image-Creator.git "${clone_dir}"
     cd "${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
 fi
 
@@ -213,16 +233,39 @@ then
     cd "${install_dir}"/"${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
     if [[ ! -d "${venv_dir}" ]]
     then
-        "${python_cmd}" -m venv "${venv_dir}"
-        "${venv_dir}"/bin/python -m pip install --upgrade pip
-        first_launch=1
+        # Check if venv module is available
+        if ! "${python_cmd}" -c "import venv" &>/dev/null
+        then
+            printf "\n%s\n" "${delimiter}"
+            printf "\e[1m\e[33mWARNING: python venv module not available. Skipping venv creation.\e[0m"
+            printf "\n%s\n" "${delimiter}"
+            use_venv=0
+        else
+            "${python_cmd}" -m venv "${venv_dir}"
+            if [[ -f "${venv_dir}"/bin/python ]] || [[ -f "${venv_dir}"/Scripts/python.exe ]]
+            then
+                venv_python="${venv_dir}"/bin/python
+                [[ -f "${venv_dir}"/Scripts/python.exe ]] && venv_python="${venv_dir}"/Scripts/python.exe
+                "${venv_python}" -m pip install --upgrade pip 2>/dev/null || true
+                first_launch=1
+            fi
+        fi
     fi
     # shellcheck source=/dev/null
-    if [[ -f "${venv_dir}"/bin/activate ]]
+    if [[ $use_venv -eq 1 ]] && [[ -f "${venv_dir}"/bin/activate ]]
     then
         source "${venv_dir}"/bin/activate
         # ensure use of python from venv
         python_cmd="${venv_dir}"/bin/python
+    elif [[ $use_venv -eq 1 ]] && [[ -f "${venv_dir}"/Scripts/activate.bat ]]
+    then
+        source "${venv_dir}"/Scripts/activate.bat
+        python_cmd="${venv_dir}"/Scripts/python.exe
+    elif [[ $use_venv -eq 0 ]]
+    then
+        printf "\n%s\n" "${delimiter}"
+        printf "Running without venv (using system Python)"
+        printf "\n%s\n" "${delimiter}"
     else
         printf "\n%s\n" "${delimiter}"
         printf "\e[1m\e[31mERROR: Cannot activate python venv, aborting...\e[0m"
@@ -231,7 +274,7 @@ then
     fi
 else
     printf "\n%s\n" "${delimiter}"
-    printf "python venv already activate or run without venv: ${VIRTUAL_ENV}"
+    printf "python venv already activate or run without venv: ${VIRTUAL_ENV:-system Python}"
     printf "\n%s\n" "${delimiter}"
 fi
 

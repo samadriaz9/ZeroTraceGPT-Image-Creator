@@ -156,6 +156,14 @@ def git_fix_workspace(dir, name):
 
 
 def run_git(dir, name, command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live, autofix=True):
+    # Set up git environment to avoid credential prompts if not already set
+    if custom_env is None:
+        custom_env = os.environ.copy()
+    if 'GIT_TERMINAL_PROMPT' not in custom_env:
+        custom_env['GIT_TERMINAL_PROMPT'] = '0'
+    if 'GIT_ASKPASS' not in custom_env:
+        custom_env['GIT_ASKPASS'] = 'echo'
+    
     try:
         return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
     except RuntimeError:
@@ -171,31 +179,37 @@ def run_git(dir, name, command, desc=None, errdesc=None, custom_env=None, live: 
 def git_clone(url, dir, name, commithash=None):
     # TODO clone into temporary dir and move if successful
 
+    # Set up git environment to avoid credential prompts (especially in Colab)
+    git_env = os.environ.copy()
+    git_env['GIT_TERMINAL_PROMPT'] = '0'
+    git_env['GIT_ASKPASS'] = 'echo'
+
     if os.path.exists(dir):
         if commithash is None:
             return
 
-        current_hash = run_git(dir, name, 'rev-parse HEAD', None, f"Couldn't determine {name}'s hash: {commithash}", live=False).strip()
+        current_hash = run_git(dir, name, 'rev-parse HEAD', None, f"Couldn't determine {name}'s hash: {commithash}", live=False, custom_env=git_env).strip()
         if current_hash == commithash:
             return
 
-        if run_git(dir, name, 'config --get remote.origin.url', None, f"Couldn't determine {name}'s origin URL", live=False).strip() != url:
-            run_git(dir, name, f'remote set-url origin "{url}"', None, f"Failed to set {name}'s origin URL", live=False)
+        if run_git(dir, name, 'config --get remote.origin.url', None, f"Couldn't determine {name}'s origin URL", live=False, custom_env=git_env).strip() != url:
+            run_git(dir, name, f'remote set-url origin "{url}"', None, f"Failed to set {name}'s origin URL", live=False, custom_env=git_env)
 
-        run_git(dir, name, 'fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}", autofix=False)
+        run_git(dir, name, 'fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}", autofix=False, custom_env=git_env)
 
-        run_git(dir, name, f'checkout {commithash}', f"Checking out commit for {name} with hash: {commithash}...", f"Couldn't checkout commit {commithash} for {name}", live=True)
+        run_git(dir, name, f'checkout {commithash}', f"Checking out commit for {name} with hash: {commithash}...", f"Couldn't checkout commit {commithash} for {name}", live=True, custom_env=git_env)
 
         return
 
     try:
-        run(f'"{git}" clone --config core.filemode=false "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True)
+        # Clone with git environment configured to avoid prompts
+        run(f'"{git}" clone --config core.filemode=false "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True, custom_env=git_env)
     except RuntimeError:
         shutil.rmtree(dir, ignore_errors=True)
         raise
 
     if commithash is not None:
-        run(f'"{git}" -C "{dir}" checkout {commithash}', None, "Couldn't checkout {name}'s hash: {commithash}")
+        run(f'"{git}" -C "{dir}" checkout {commithash}', None, "Couldn't checkout {name}'s hash: {commithash}", custom_env=git_env)
 
 
 def git_pull_recursive(dir):
