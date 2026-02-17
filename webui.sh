@@ -45,10 +45,23 @@ fi
 # python3 executable
 if [[ -z "${python_cmd}" ]]
 then
-  # Try python3.10 first (preferred), then fall back to available python3
+  # Try python3.10 first (preferred), but only if it has pip
+  # Otherwise fall back to available python3/python
   if command -v python3.10 &> /dev/null
   then
-    python_cmd="python3.10"
+    # Check if python3.10 has pip
+    if python3.10 -m pip --version &> /dev/null
+    then
+      python_cmd="python3.10"
+    elif command -v python3 &> /dev/null
+    then
+      python_cmd="python3"
+    elif command -v python &> /dev/null
+    then
+      python_cmd="python"
+    else
+      python_cmd="python3.10"  # Fallback even without pip check
+    fi
   elif command -v python3 &> /dev/null
   then
     python_cmd="python3"
