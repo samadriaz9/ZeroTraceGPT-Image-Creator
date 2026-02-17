@@ -183,6 +183,9 @@ def git_clone(url, dir, name, commithash=None):
     git_env = os.environ.copy()
     git_env['GIT_TERMINAL_PROMPT'] = '0'
     git_env['GIT_ASKPASS'] = 'echo'
+    git_env['GIT_CREDENTIAL_HELPER'] = ''
+    # Clear any cached credentials that might interfere
+    git_env.pop('GIT_SSH_COMMAND', None)
 
     if os.path.exists(dir):
         if commithash is None:
@@ -203,7 +206,9 @@ def git_clone(url, dir, name, commithash=None):
 
     try:
         # Clone with git environment configured to avoid prompts
-        run(f'"{git}" clone --config core.filemode=false "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True, custom_env=git_env)
+        # Use --config to disable credential helper for this clone
+        clone_cmd = f'"{git}" clone --config core.filemode=false --config credential.helper= --config credential.helper="" "{url}" "{dir}"'
+        run(clone_cmd, f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True, custom_env=git_env)
     except RuntimeError:
         shutil.rmtree(dir, ignore_errors=True)
         raise
